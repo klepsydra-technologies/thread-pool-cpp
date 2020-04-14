@@ -1,9 +1,11 @@
 #pragma once
 
+
 #include <thread_pool/fixed_function.hpp>
-#include <thread_pool/mpmc_bounded_queue.hpp>
 #include <thread_pool/thread_pool_options.hpp>
 #include <thread_pool/worker.hpp>
+
+#include <concurrentqueue.h>
 
 #include <atomic>
 #include <memory>
@@ -13,10 +15,13 @@
 namespace tp
 {
 
+template <typename Task>
+using ConcurrentQueue = moodycamel::ConcurrentQueue<Task, moodycamel::ConcurrentQueueDefaultTraits>;
+
 template <typename Task, template<typename> class Queue>
 class ThreadPoolImpl;
 using ThreadPool = ThreadPoolImpl<FixedFunction<void(), 128>,
-                                  MPMCBoundedQueue>;
+                                  ConcurrentQueue>;
 
 /**
  * @brief The ThreadPool class implements thread pool pattern.
