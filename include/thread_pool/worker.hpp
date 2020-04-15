@@ -3,6 +3,10 @@
 #include <atomic>
 #include <thread>
 
+#if defined(__unix__) || defined(__rtems__)
+#include <pthread.h>
+#endif
+
 namespace tp
 {
 
@@ -51,14 +55,14 @@ public:
      * @return true on success.
      */
     template <typename Handler>
-    bool post(Handler&& handler);
+    bool post(Handler&& handler, std::string&& name="");
 
     /**
      * @brief steal Steal one task from this worker queue.
      * @param task Place for stealed task to be stored.
      * @return true on success.
      */
-    bool steal(Task& task);
+    bool steal(std::pair<Task, std::string>& taskPair);
 
     /**
      * @brief getWorkerIdForCurrentThread Return worker ID associated with
@@ -75,7 +79,7 @@ private:
      */
     void threadFunc(size_t id, Worker* steal_donor);
 
-    Queue<Task> m_queue;
+    Queue<std::pair<Task, std::string> > m_queue;
     std::atomic<bool> m_running_flag;
     std::thread m_thread;
 };
@@ -138,15 +142,15 @@ inline size_t Worker<Task, Queue>::getWorkerIdForCurrentThread()
 
 template <typename Task, template<typename> class Queue>
 template <typename Handler>
-inline bool Worker<Task, Queue>::post(Handler&& handler)
+inline bool Worker<Task, Queue>::post(Handler&& handler, std::string&& name)
 {
-    return m_queue.try_enqueue(std::forward<Handler>(handler));
+    return m_queue.try_enqueue(std::make_pair<Task, std::string>(std::forward<Handler>(handler), std::forward<std::string>(name)));
 }
 
 template <typename Task, template<typename> class Queue>
-inline bool Worker<Task, Queue>::steal(Task& task)
+inline bool Worker<Task, Queue>::steal(std::pair<Task, std::string>& taskPair)
 {
-    return m_queue.try_dequeue(task);
+    return m_queue.try_dequeue(taskPair);
 }
 
 template <typename Task, template<typename> class Queue>
@@ -154,15 +158,21 @@ inline void Worker<Task, Queue>::threadFunc(size_t id, Worker* steal_donor)
 {
     *detail::thread_id() = id;
 
-    Task handler;
+    // Task handler & name pair
+    std::pair<Task, std::string> handlerPair;
 
     while (m_running_flag.load(std::memory_order_relaxed))
     {
-        if (m_queue.try_dequeue(handler) || steal_donor->steal(handler))
+        if (m_queue.try_dequeue(handlerPair) || steal_donor->steal(handlerPair))
         {
             try
             {
-                handler();
+#if defined(__unix__) || defined(__rtems__)
+                if (handlerPair.second.size() > 0) {
+                    pthread_setname_np(m_thread.native_handle(), handlerPair.second.c_str());
+                }
+#endif
+                handlerPair.first();
             }
             catch(...)
             {
