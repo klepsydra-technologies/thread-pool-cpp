@@ -168,7 +168,7 @@ inline void Worker<Task, Queue>::threadFunc(size_t id, Worker* steal_donor)
             try
             {
 #if defined(__unix__) || defined(__rtems__)
-                if (handlerPair.second.size() > 0) {
+                if (!handlerPair.second.empty()) {
                     pthread_setname_np(m_thread.native_handle(), handlerPair.second.c_str());
                 }
 #endif
