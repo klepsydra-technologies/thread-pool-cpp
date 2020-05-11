@@ -1,9 +1,11 @@
 #pragma once
 
+
 #include <thread_pool/fixed_function.hpp>
-#include <thread_pool/mpmc_bounded_queue.hpp>
 #include <thread_pool/thread_pool_options.hpp>
 #include <thread_pool/worker.hpp>
+
+#include <concurrentqueue.h>
 
 #include <atomic>
 #include <memory>
@@ -13,10 +15,13 @@
 namespace tp
 {
 
+template <typename Task>
+using ConcurrentQueue = moodycamel::ConcurrentQueue<Task, moodycamel::ConcurrentQueueDefaultTraits>;
+
 template <typename Task, template<typename> class Queue>
 class ThreadPoolImpl;
 using ThreadPool = ThreadPoolImpl<FixedFunction<void(), 128>,
-                                  MPMCBoundedQueue>;
+                                  ConcurrentQueue>;
 
 /**
  * @brief The ThreadPool class implements thread pool pattern.
@@ -50,6 +55,17 @@ public:
      * @brief Move assignment implementaion.
      */
     ThreadPoolImpl& operator=(ThreadPoolImpl&& rhs) noexcept;
+
+    /**
+     * @brief post Try post job to thread pool.
+     * @param handler Handler to be called from thread pool worker. It has
+     * to be callable as 'handler()'.
+     * @param name Name to be set as thread name. Must have max length 15 For linux.
+     * @return 'true' on success, false otherwise.
+     * @note All exceptions thrown by handler will be suppressed.
+     */
+    template <typename Handler>
+    bool tryPost(Handler&& handler, std::string& name);
 
     /**
      * @brief post Try post job to thread pool.
@@ -129,9 +145,17 @@ ThreadPoolImpl<Task, Queue>::operator=(ThreadPoolImpl<Task, Queue>&& rhs) noexce
 
 template <typename Task, template<typename> class Queue>
 template <typename Handler>
+inline bool ThreadPoolImpl<Task, Queue>::tryPost(Handler&& handler, std::string& name)
+{
+    return getWorker().post(std::forward<Handler>(handler), std::move(name));
+}
+
+template <typename Task, template<typename> class Queue>
+template <typename Handler>
 inline bool ThreadPoolImpl<Task, Queue>::tryPost(Handler&& handler)
 {
-    return getWorker().post(std::forward<Handler>(handler));
+    std::string dummy("");
+    return tryPost(std::forward<Handler>(handler), dummy);
 }
 
 template <typename Task, template<typename> class Queue>
