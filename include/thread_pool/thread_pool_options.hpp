@@ -31,6 +31,12 @@ public:
     void setQueueSize(size_t size);
 
     /**
+     * @brief setCritical Set if threadpool deals with critical threads
+     * @param critical True if critical threads, else false.
+     */
+    void setCritical(bool critical);
+
+    /**
      * @brief threadCount Return thread count.
      */
     size_t threadCount() const;
@@ -40,9 +46,11 @@ public:
      */
     size_t queueSize() const;
 
+    bool critical() const;
 private:
     size_t m_thread_count;
     size_t m_queue_size;
+    bool m_is_critical;
 };
 
 /// Implementation
@@ -50,6 +58,7 @@ private:
 inline ThreadPoolOptions::ThreadPoolOptions()
     : m_thread_count(std::max<size_t>(1u, std::thread::hardware_concurrency()))
     , m_queue_size(1024u)
+    , m_is_critical(false)
 {
 }
 
@@ -71,6 +80,16 @@ inline size_t ThreadPoolOptions::threadCount() const
 inline size_t ThreadPoolOptions::queueSize() const
 {
     return m_queue_size;
+}
+
+inline void ThreadPoolOptions::setCritical(bool critical)
+{
+    m_is_critical = critical;
+}
+
+inline bool ThreadPoolOptions::critical() const
+{
+    return m_is_critical;
 }
 
 }

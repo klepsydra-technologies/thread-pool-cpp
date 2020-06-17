@@ -88,10 +88,11 @@ public:
     void post(Handler&& handler);
 
 private:
-    Worker<Task, Queue>& getWorker();
+    size_t getWorkerId();
 
     std::vector<std::unique_ptr<Worker<Task, Queue>>> m_workers;
     std::atomic<size_t> m_next_worker;
+    const bool m_critical;
 };
 
 
@@ -102,6 +103,7 @@ inline ThreadPoolImpl<Task, Queue>::ThreadPoolImpl(
                                             const ThreadPoolOptions& options)
     : m_workers(options.threadCount())
     , m_next_worker(0)
+    , m_critical(options.critical())
 {
     for(auto& worker_ptr : m_workers)
     {
@@ -147,7 +149,12 @@ template <typename Task, template<typename> class Queue>
 template <typename Handler>
 inline bool ThreadPoolImpl<Task, Queue>::tryPost(Handler&& handler, std::string& name)
 {
-    return getWorker().post(std::forward<Handler>(handler), std::move(name));
+    auto id = getWorkerId();
+    if ((id >= m_workers.size()) & m_critical) {
+        return false;
+    } else {
+        return m_workers[id % m_workers.size()]->post(std::forward<Handler>(handler), std::move(name));
+    }
 }
 
 template <typename Task, template<typename> class Queue>
@@ -170,16 +177,15 @@ inline void ThreadPoolImpl<Task, Queue>::post(Handler&& handler)
 }
 
 template <typename Task, template<typename> class Queue>
-inline Worker<Task, Queue>& ThreadPoolImpl<Task, Queue>::getWorker()
+inline size_t ThreadPoolImpl<Task, Queue>::getWorkerId()
 {
     auto id = Worker<Task, Queue>::getWorkerIdForCurrentThread();
 
     if (id > m_workers.size())
     {
-        id = m_next_worker.fetch_add(1, std::memory_order_relaxed) %
-             m_workers.size();
+        id = m_next_worker.fetch_add(1, std::memory_order_relaxed);
     }
 
-    return *m_workers[id];
+    return id;
 }
 }
