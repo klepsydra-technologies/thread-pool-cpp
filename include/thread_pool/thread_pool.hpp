@@ -1,8 +1,8 @@
 #pragma once
 
-
 #include <thread_pool/fixed_function.hpp>
 #include <thread_pool/thread_pool_options.hpp>
+#include <thread_pool/thread_params.hpp>
 #include <thread_pool/worker.hpp>
 
 #include <concurrentqueue.h>
@@ -65,17 +65,7 @@ public:
      * @note All exceptions thrown by handler will be suppressed.
      */
     template <typename Handler>
-    bool tryPost(Handler&& handler, std::string& name);
-
-    /**
-     * @brief post Try post job to thread pool.
-     * @param handler Handler to be called from thread pool worker. It has
-     * to be callable as 'handler()'.
-     * @return 'true' on success, false otherwise.
-     * @note All exceptions thrown by handler will be suppressed.
-     */
-    template <typename Handler>
-    bool tryPost(Handler&& handler);
+    bool tryPost(Handler&& handler, const std::string& name = "", const std::vector<int>& cpuset = std::vector<int>());
 
     /**
      * @brief post Post job to thread pool.
@@ -147,22 +137,15 @@ ThreadPoolImpl<Task, Queue>::operator=(ThreadPoolImpl<Task, Queue>&& rhs) noexce
 
 template <typename Task, template<typename> class Queue>
 template <typename Handler>
-inline bool ThreadPoolImpl<Task, Queue>::tryPost(Handler&& handler, std::string& name)
+inline bool ThreadPoolImpl<Task, Queue>::tryPost(Handler&& handler, const std::string& name, const std::vector<int>& cpuset)
 {
     auto id = getWorkerId();
     if ((id >= m_workers.size()) & m_critical) {
         return false;
     } else {
-        return m_workers[id % m_workers.size()]->post(std::forward<Handler>(handler), std::move(name));
+        ThreadParams params{name, cpuset};
+        return m_workers[id % m_workers.size()]->post(std::forward<Handler>(handler), std::move(params));
     }
-}
-
-template <typename Task, template<typename> class Queue>
-template <typename Handler>
-inline bool ThreadPoolImpl<Task, Queue>::tryPost(Handler&& handler)
-{
-    std::string dummy("");
-    return tryPost(std::forward<Handler>(handler), dummy);
 }
 
 template <typename Task, template<typename> class Queue>
