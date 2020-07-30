@@ -15,16 +15,17 @@ namespace tp
 class ThreadParams
 {
 public:
-    std::string name_;
-
-    std::vector<int> cpuset_;
-
     ThreadParams();
 
     explicit ThreadParams(const std::string& name, const std::vector<int>& cpuset);
 
     std::string& getName();
     std::vector<int>& getCpuAffinity();
+
+private:
+    std::string name_;
+
+    std::vector<int> cpuset_;
 };
 
 /// Implementation
