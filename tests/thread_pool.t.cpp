@@ -44,7 +44,7 @@ TEST(ThreadPool, tryPostJob)
 
     std::future<int> r = t.get_future();
     std::string name("testThread");
-    pool.tryPost(t, name);
+    ASSERT_TRUE(pool.tryPost(t, name));
 
     ASSERT_EQ(42, r.get());
 }
@@ -60,7 +60,7 @@ TEST(ThreadPool, tryPostJobNoName)
         });
 
     std::future<int> r = t.get_future();
-    pool.tryPost(t);
+    ASSERT_TRUE(pool.tryPost(t));
 
     ASSERT_EQ(42, r.get());
 }

@@ -7,6 +7,8 @@
 #include <pthread.h>
 #endif
 
+#include <thread_pool/thread_params.hpp>
+
 namespace tp
 {
 
@@ -55,14 +57,14 @@ public:
      * @return true on success.
      */
     template <typename Handler>
-    bool post(Handler&& handler, std::string&& name="");
+    bool post(Handler&& handler, ThreadParams&& params);
 
     /**
      * @brief steal Steal one task from this worker queue.
      * @param task Place for stealed task to be stored.
      * @return true on success.
      */
-    bool steal(std::pair<Task, std::string>& taskPair);
+    bool steal(std::pair<Task, ThreadParams>& taskPair);
 
     /**
      * @brief getWorkerIdForCurrentThread Return worker ID associated with
@@ -79,7 +81,7 @@ private:
      */
     void threadFunc(size_t id, Worker* steal_donor);
 
-    Queue<std::pair<Task, std::string> > m_queue;
+    Queue<std::pair<Task, ThreadParams> > m_queue;
     std::atomic<bool> m_running_flag;
     std::thread m_thread;
 };
@@ -142,13 +144,13 @@ inline size_t Worker<Task, Queue>::getWorkerIdForCurrentThread()
 
 template <typename Task, template<typename> class Queue>
 template <typename Handler>
-inline bool Worker<Task, Queue>::post(Handler&& handler, std::string&& name)
+inline bool Worker<Task, Queue>::post(Handler&& handler, ThreadParams&& params)
 {
-    return m_queue.try_enqueue(std::make_pair<Task, std::string>(std::forward<Handler>(handler), std::forward<std::string>(name)));
+    return m_queue.try_enqueue(std::make_pair<Task, ThreadParams>(std::forward<Handler>(handler), std::forward<ThreadParams>(params)));
 }
 
 template <typename Task, template<typename> class Queue>
-inline bool Worker<Task, Queue>::steal(std::pair<Task, std::string>& taskPair)
+inline bool Worker<Task, Queue>::steal(std::pair<Task, ThreadParams>& taskPair)
 {
     return m_queue.try_dequeue(taskPair);
 }
@@ -159,7 +161,7 @@ inline void Worker<Task, Queue>::threadFunc(size_t id, Worker* steal_donor)
     *detail::thread_id() = id;
 
     // Task handler & name pair
-    std::pair<Task, std::string> handlerPair;
+    std::pair<Task, ThreadParams> handlerPair;
 
     while (m_running_flag.load(std::memory_order_relaxed))
     {
@@ -168,8 +170,22 @@ inline void Worker<Task, Queue>::threadFunc(size_t id, Worker* steal_donor)
             try
             {
 #if defined(__unix__) || defined(__rtems__)
-                if (!handlerPair.second.empty()) {
-                    pthread_setname_np(m_thread.native_handle(), handlerPair.second.c_str());
+                auto threadName = handlerPair.second.getName();
+                if (!threadName.empty()) {
+                    if (threadName.size() > 15) {
+                        threadName.erase(16, std::string::npos);
+                    }
+                    pthread_setname_np(m_thread.native_handle(), threadName.c_str());
+                }
+                auto cpu_affinity_vector = handlerPair.second.getCpuAffinity();
+                cpu_set_t cpuset;
+                CPU_ZERO(&cpuset);
+                if (!cpu_affinity_vector.empty()) {
+                    for (auto& i: cpu_affinity_vector) {
+                        CPU_SET(i, &cpuset);
+                    }
+                    pthread_setaffinity_np(m_thread.native_handle(),
+                                                    sizeof(cpu_set_t), &cpuset);
                 }
 #endif
                 handlerPair.first();
