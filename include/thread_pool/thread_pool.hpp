@@ -140,7 +140,7 @@ template <typename Handler>
 inline bool ThreadPoolImpl<Task, Queue>::tryPost(Handler&& handler, const std::string& name, const std::vector<int>& cpuset)
 {
     auto id = getWorkerId();
-    if ((id >= m_workers.size()) & m_critical) {
+    if ((id >= m_workers.size()) && m_critical) {
         return false;
     } else {
         ThreadParams params{name, cpuset};
