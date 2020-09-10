@@ -4,8 +4,7 @@
 #include <thread_pool/thread_pool_options.hpp>
 #include <thread_pool/thread_params.hpp>
 #include <thread_pool/worker.hpp>
-
-#include <concurrentqueue.h>
+#include <thread_pool/queue_parameters.hpp>
 
 #include <atomic>
 #include <memory>
@@ -14,9 +13,6 @@
 
 namespace tp
 {
-
-template <typename Task>
-using ConcurrentQueue = moodycamel::ConcurrentQueue<Task, moodycamel::ConcurrentQueueDefaultTraits>;
 
 template <typename Task, template<typename> class Queue>
 class ThreadPoolImpl;
