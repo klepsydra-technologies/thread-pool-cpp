@@ -13,6 +13,10 @@ size_t getWorkerIdForCurrentThread()
     return *tp::detail::thread_id();
 }
 
+size_t getWorkerIdForCurrentThread2()
+{
+    return tp::Worker<std::function<void()>, tp::MPMCBoundedQueue>::getWorkerIdForCurrentThread();
+}
 }
 
 TEST(ThreadPool, postJob)

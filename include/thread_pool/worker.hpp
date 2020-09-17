@@ -100,7 +100,7 @@ namespace detail
 
 template <typename Task, template<typename> class Queue>
 inline Worker<Task, Queue>::Worker(size_t queue_size)
-    : m_queue(queue_size, 1, 1)
+    : m_queue(queue_size)
     , m_running_flag(true)
 {
 }
@@ -146,13 +146,13 @@ template <typename Task, template<typename> class Queue>
 template <typename Handler>
 inline bool Worker<Task, Queue>::post(Handler&& handler, ThreadParams&& params)
 {
-    return m_queue.try_enqueue(std::make_pair<Task, ThreadParams>(std::forward<Handler>(handler), std::forward<ThreadParams>(params)));
+    return m_queue.push(std::make_pair<Task, ThreadParams>(std::forward<Handler>(handler), std::forward<ThreadParams>(params)));
 }
 
 template <typename Task, template<typename> class Queue>
 inline bool Worker<Task, Queue>::steal(std::pair<Task, ThreadParams>& taskPair)
 {
-    return m_queue.try_dequeue(taskPair);
+    return m_queue.pop(taskPair);
 }
 
 template <typename Task, template<typename> class Queue>
@@ -165,7 +165,7 @@ inline void Worker<Task, Queue>::threadFunc(size_t id, Worker* steal_donor)
 
     while (m_running_flag.load(std::memory_order_relaxed))
     {
-        if (m_queue.try_dequeue(handlerPair) || steal_donor->steal(handlerPair))
+        if (m_queue.pop(handlerPair) || steal_donor->steal(handlerPair))
         {
             try
             {
