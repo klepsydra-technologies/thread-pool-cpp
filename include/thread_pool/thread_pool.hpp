@@ -11,6 +11,8 @@
 #include <stdexcept>
 #include <vector>
 
+#include <spdlog/spdlog.h>
+
 namespace tp
 {
 
@@ -140,6 +142,7 @@ inline bool ThreadPoolImpl<Task, Queue>::tryPost(Handler&& handler, const std::s
         return false;
     } else {
         ThreadParams params{name, cpuset};
+        spdlog::debug("ThreadPoolImpl::tryPost. id = {}, name = {}.", id, name);
         return m_workers[id % m_workers.size()]->post(std::forward<Handler>(handler), std::move(params));
     }
 }
@@ -159,6 +162,7 @@ template <typename Task, template<typename> class Queue>
 inline size_t ThreadPoolImpl<Task, Queue>::getWorkerId()
 {
     auto id = Worker<Task, Queue>::getWorkerIdForCurrentThread();
+    spdlog::debug("ThreadPoolImpl::getWorkerId. id = {}, m_workers.size(): {}", id, m_workers.size());
 
     if (id > m_workers.size())
     {
