@@ -1,6 +1,7 @@
 #tests
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../spdlog/include)
 
 function(build_test test_name)
     add_executable(${test_name}_test ${ARGN}) 
