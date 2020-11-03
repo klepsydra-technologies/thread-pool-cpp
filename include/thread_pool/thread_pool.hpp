@@ -161,13 +161,8 @@ inline void ThreadPoolImpl<Task, Queue>::post(Handler&& handler)
 template <typename Task, template<typename> class Queue>
 inline size_t ThreadPoolImpl<Task, Queue>::getWorkerId()
 {
-    auto id = Worker<Task, Queue>::getWorkerIdForCurrentThread();
+    auto id = m_next_worker.fetch_add(1, std::memory_order_relaxed);
     spdlog::debug("ThreadPoolImpl::getWorkerId. id = {}, m_workers.size(): {}", id, m_workers.size());
-
-    if (id > m_workers.size())
-    {
-        id = m_next_worker.fetch_add(1, std::memory_order_relaxed);
-    }
 
     return id;
 }
