@@ -83,7 +83,7 @@ struct RepostJob
 {
     //Heavy heavy;
 
-    ThreadPool* thread_pool;
+    NonBlockingThreadPool* thread_pool;
 #ifdef WITH_ASIO
     AsioThreadPool* asio_thread_pool;
 #endif
@@ -92,7 +92,7 @@ struct RepostJob
     long long int begin_count;
     std::promise<void>* waiter;
 
-    RepostJob(ThreadPool* thread_pool, std::promise<void>* waiter)
+    RepostJob(NonBlockingThreadPool* thread_pool, std::promise<void>* waiter)
         : thread_pool(thread_pool)
 #ifdef WITH_ASIO
           ,
@@ -155,7 +155,7 @@ int main(int, const char* [])
         std::cout << "***thread pool cpp***" << std::endl;
 
         std::promise<void> waiters[CONCURRENCY];
-        ThreadPool thread_pool;
+        NonBlockingThreadPool thread_pool;
         for(auto& waiter : waiters)
         {
             thread_pool.post(RepostJob(&thread_pool, &waiter));

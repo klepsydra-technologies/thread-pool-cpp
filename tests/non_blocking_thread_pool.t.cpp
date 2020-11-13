@@ -1,18 +1,27 @@
 #include <gtest/gtest.h>
 
 #include <thread_pool/thread_pool.hpp>
-#include <thread_pool/thread_params.hpp>
-#include <thread_pool/fixed_function.hpp>
-#include <thread_pool/safe_queue.h>
 
 #include <thread>
 #include <future>
 #include <functional>
 #include <memory>
 
+namespace TestLinkage {
+size_t getWorkerIdForCurrentThread()
+{
+    return *tp::detail::thread_id();
+}
+
+size_t getWorkerIdForCurrentThread2()
+{
+    return tp::Worker<std::function<void()>, tp::MPMCBoundedQueue>::getWorkerIdForCurrentThread();
+}
+}
+
 TEST(ThreadPool, postJob)
 {
-    tp::BlockingThreadPool pool;
+    tp::NonBlockingThreadPool pool;
 
     std::packaged_task<int()> t([]()
         {
@@ -29,7 +38,7 @@ TEST(ThreadPool, postJob)
 
 TEST(ThreadPool, tryPostJob)
 {
-    tp::BlockingThreadPool pool;
+    tp::NonBlockingThreadPool pool;
 
     std::packaged_task<int()> t([]()
         {
@@ -44,9 +53,9 @@ TEST(ThreadPool, tryPostJob)
     ASSERT_EQ(42, r.get());
 }
 
-TEST(ThreadPool, tryPostJobame)
+TEST(ThreadPool, tryPostJobNoName)
 {
-    tp::BlockingThreadPool pool;
+    tp::NonBlockingThreadPool pool;
 
     std::packaged_task<int()> t([]()
         {
@@ -66,7 +75,7 @@ TEST(ThreadPool, postJobCritical)
     options.setThreadCount(1);
     options.setCritical(true);
 
-    tp::BlockingThreadPool pool(options);
+    tp::NonBlockingThreadPool pool(options);
     std::packaged_task<int()> t([]()
         {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -87,7 +96,7 @@ TEST(ThreadPool, postJobCriticalAfterFree)
     options.setThreadCount(1);
     options.setCritical(true);
 
-    tp::BlockingThreadPool pool(options);
+    tp::NonBlockingThreadPool pool(options);
     std::packaged_task<int()> t([]()
         {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));

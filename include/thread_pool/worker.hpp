@@ -8,13 +8,10 @@
 #endif
 
 #include <thread_pool/thread_params.hpp>
+#include <thread_pool/free_workers_map.h>
 
 namespace tp
 {
-
-template <typename Task, template<typename> class Queue>
-class ThreadPoolImpl;
-
 /**
  * @brief The Worker class owns task queue and executing thread.
  * In thread it tries to pop task from queue. If queue is empty then it tries
@@ -29,7 +26,7 @@ public:
      * @brief Worker Constructor.
      * @param queue_size Length of undelaying task queue.
      */
-    explicit Worker(size_t queue_size, ThreadPoolImpl<Task, Queue> * threadPool);
+    explicit Worker(size_t queue_size, FreeWorkersMap & freeWorkers);
 
     /**
      * @brief Move ctor implementation.
@@ -86,7 +83,7 @@ private:
 
     Queue<std::pair<Task, ThreadParams> > m_queue;
     std::atomic<bool> m_running_flag;
-    ThreadPoolImpl<Task, Queue> * m_threadPool;
+    FreeWorkersMap & m_freeWorkers;
     std::thread m_thread;
 };
 
@@ -103,10 +100,10 @@ namespace detail
 }
 
 template <typename Task, template<typename> class Queue>
-inline Worker<Task, Queue>::Worker(size_t queue_size, ThreadPoolImpl<Task, Queue> * threadPool)
+inline Worker<Task, Queue>::Worker(size_t queue_size, FreeWorkersMap & freeWorkers)
     : m_queue(queue_size)
     , m_running_flag(true)
-    , m_threadPool(threadPool)
+    , m_freeWorkers(freeWorkers)
 {
 }
 
@@ -174,7 +171,7 @@ inline void Worker<Task, Queue>::threadFunc(size_t id, Worker* steal_donor)
         {
             try
             {
-                m_threadPool->setFree(id, false);
+                m_freeWorkers.setFree(id, false);
 #if defined(__unix__) || defined(__rtems__)
                 auto threadName = handlerPair.second.getName();
                 if (!threadName.empty()) {
@@ -195,7 +192,7 @@ inline void Worker<Task, Queue>::threadFunc(size_t id, Worker* steal_donor)
                 }
 #endif
                 handlerPair.first();
-                m_threadPool->setFree(id, true);
+                m_freeWorkers.setFree(id, true);
             }
             catch(...)
             {
