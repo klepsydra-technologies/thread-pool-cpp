@@ -5,13 +5,14 @@
 #include <thread_pool/thread_pool_options.hpp>
 #include <thread_pool/thread_params.hpp>
 #include <thread_pool/worker.hpp>
+#include <thread_pool/free_workers_map.h>
+#include <thread_pool/thread_pool_blocking_queue.h>
 
 #include <atomic>
 #include <memory>
 #include <stdexcept>
 #include <vector>
 #include <mutex>
-#include <map>
 
 #include <spdlog/spdlog.h>
 
@@ -20,10 +21,9 @@ namespace tp
 
 template <typename Task, template<typename> class Queue>
 class ThreadPoolImpl;
-using ThreadPool = ThreadPoolImpl<FixedFunction<void(), 128>,
-                                  MPMCBoundedQueue>;
+using NonBlockingThreadPool = ThreadPoolImpl<FixedFunction<void(), 128>, MPMCBoundedQueue>;
+using BlockingThreadPool = ThreadPoolImpl<FixedFunction<void(), 128>, BlockingQueue>;
 
-using WorkerBusyMap = std::map<size_t, bool>;
 /**
  * @brief The ThreadPool class implements thread pool pattern.
  * It is highly scalable and fast.
@@ -78,14 +78,11 @@ public:
     template <typename Handler>
     void post(Handler&& handler);
 
-    void setFree(size_t id, bool isFree);
-
 private:
     size_t getWorkerId();
 
     std::vector<std::unique_ptr<Worker<Task, Queue>>> m_workers;
-    WorkerBusyMap freeWorkers;
-    std::mutex workerLock;
+    FreeWorkersMap freeWorkers;
     std::atomic<size_t> m_next_worker;
     const bool m_critical;
 };
@@ -102,14 +99,14 @@ inline ThreadPoolImpl<Task, Queue>::ThreadPoolImpl(
 {
     for(auto& worker_ptr : m_workers)
     {
-        worker_ptr.reset(new Worker<Task, Queue>(options.queueSize(), this));
+        worker_ptr.reset(new Worker<Task, Queue>(options.queueSize(), this->freeWorkers));
     }
 
     for(size_t i = 0; i < m_workers.size(); ++i)
     {
         Worker<Task, Queue>* steal_donor =
                                 m_workers[(i + 1) % m_workers.size()].get();
-        setFree(i, true);
+        freeWorkers.setFree(i, true);
         m_workers[i]->start(i, steal_donor);
     }
 }
@@ -150,7 +147,7 @@ inline bool ThreadPoolImpl<Task, Queue>::tryPost(Handler&& handler, const std::s
         if (id >= m_workers.size()) {
             return false;
         }
-        setFree(id, false);
+        freeWorkers.setFree(id, false);
     }
     ThreadParams params{name, cpuset};
     spdlog::debug("ThreadPoolImpl::tryPost. id = {}, name = {}.", id, name);
@@ -173,26 +170,15 @@ inline size_t ThreadPoolImpl<Task, Queue>::getWorkerId()
 {
     size_t id;
     {
-        std::lock_guard<std::mutex> guard(workerLock);
-        auto it = std::find_if(freeWorkers.begin(), freeWorkers.end(),
-                               [](WorkerBusyMap::value_type item)->bool {
-                                   return item.second;});
-        if (it == freeWorkers.end()) {
-            id = m_next_worker.fetch_add(1, std::memory_order_relaxed);
-        } else {
-            id = (*it).first;
+        bool found = freeWorkers.findFreeWorker(id);
+        if (found) {
             m_next_worker.store(id+1, std::memory_order_relaxed);
+        } else {
+            id = m_next_worker.fetch_add(1, std::memory_order_relaxed);
         }
     }
     spdlog::debug("ThreadPoolImpl::getWorkerId. id = {}, m_workers.size(): {}", id, m_workers.size());
 
     return id;
-}
-
-template <typename Task, template<typename> class Queue>
-void ThreadPoolImpl<Task, Queue>::setFree(size_t id, bool isFree) {
-    std::lock_guard<std::mutex> guard(workerLock);
-    spdlog::debug("Setting worker with id : {}, to status free = {}", id, isFree);
-    freeWorkers[id] = isFree;
 }
 }
