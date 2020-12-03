@@ -15,8 +15,7 @@ public:
     {}
 
     bool pop(T& item) {
-        _decorableQueue.timeout_move_pop(item, _timeout);
-        return true;
+        return _decorableQueue.timeout_move_pop(item, _timeout);
     }
 
     bool push(T&& item) {
