@@ -167,7 +167,7 @@ inline void Worker<Task, Queue>::threadFunc(size_t id, Worker* steal_donor)
 
     while (m_running_flag.load(std::memory_order_relaxed))
     {
-        if (m_queue.pop(handlerPair) || steal_donor->steal(handlerPair))
+        if (m_queue.pop(handlerPair) || ((steal_donor != nullptr) && (steal_donor->steal(handlerPair))))
         {
             try
             {
