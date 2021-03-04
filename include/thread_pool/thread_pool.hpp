@@ -104,7 +104,7 @@ inline ThreadPoolImpl<Task, Queue>::ThreadPoolImpl(
 
     for(size_t i = 0; i < m_workers.size(); ++i)
     {
-        Worker<Task, Queue>* steal_donor =
+        Worker<Task, Queue>* steal_donor = m_critical ? nullptr :
                                 m_workers[(i + 1) % m_workers.size()].get();
         freeWorkers.setFree(i, true);
         m_workers[i]->start(i, steal_donor);

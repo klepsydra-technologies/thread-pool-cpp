@@ -56,7 +56,8 @@ public:
      * @param max_num_items
      */
     SafeQueue(unsigned int max_num_items)
-        : m_max_num_items(max_num_items) {}
+        : m_queue()
+        , m_max_num_items(max_num_items) {}
 
     /**
      * @brief SafeQueue
