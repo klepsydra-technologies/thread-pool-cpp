@@ -40,7 +40,7 @@ public:
      * @param options Creation options.
      */
     explicit ThreadPoolImpl(
-        const ThreadPoolOptions& options = ThreadPoolOptions());
+            const ThreadPoolOptions& options = ThreadPoolOptions());
 
     /**
      * @brief Move ctor implementation.
@@ -85,29 +85,35 @@ private:
     FreeWorkersMap freeWorkers;
     std::atomic<size_t> m_next_worker;
     const bool m_critical;
+    std::shared_ptr<Queue<std::pair<Task, ThreadParams>>> m_non_critical_queue;
 };
 
 
 /// Implementation
 
 template <typename Task, template<typename> class Queue>
-inline ThreadPoolImpl<Task, Queue>::ThreadPoolImpl(
-                                            const ThreadPoolOptions& options)
+inline ThreadPoolImpl<Task, Queue>::ThreadPoolImpl(const ThreadPoolOptions& options)
     : m_workers(options.threadCount())
     , m_next_worker(0)
     , m_critical(options.critical())
 {
-    for(auto& worker_ptr : m_workers)
-    {
-        worker_ptr.reset(new Worker<Task, Queue>(options.queueSize(), this->freeWorkers));
+    if (m_critical) {
+        for(auto& worker_ptr : m_workers)
+        {
+            worker_ptr.reset(new Worker<Task, Queue>(options.queueSize(), this->freeWorkers));
+        }
+    } else {
+        m_non_critical_queue = std::make_shared<Queue<std::pair<Task, ThreadParams>>>(options.queueSize());
+        for(auto& worker_ptr : m_workers)
+        {
+            worker_ptr.reset(new Worker<Task, Queue>(m_non_critical_queue, this->freeWorkers));
+        }
     }
 
     for(size_t i = 0; i < m_workers.size(); ++i)
     {
-        Worker<Task, Queue>* steal_donor = m_critical ? nullptr :
-                                m_workers[(i + 1) % m_workers.size()].get();
         freeWorkers.setFree(i, true);
-        m_workers[i]->start(i, steal_donor);
+        m_workers[i]->start(i);
     }
 }
 
@@ -143,15 +149,17 @@ template <typename Handler>
 inline bool ThreadPoolImpl<Task, Queue>::tryPost(Handler&& handler, const std::string& name, const std::vector<int>& cpuset)
 {
     auto id = getWorkerId();
+    ThreadParams params{name, cpuset};
     if (m_critical) {
         if (id >= m_workers.size()) {
             return false;
         }
         freeWorkers.setFree(id, false);
+        spdlog::debug("ThreadPoolImpl::tryPost. id = {}, name = {}.", id, name);
+        return m_workers[id % m_workers.size()]->post(std::forward<Handler>(handler), std::move(params));
     }
-    ThreadParams params{name, cpuset};
-    spdlog::debug("ThreadPoolImpl::tryPost. id = {}, name = {}.", id, name);
-    return m_workers[id % m_workers.size()]->post(std::forward<Handler>(handler), std::move(params));
+
+    return m_non_critical_queue->push(std::make_pair<Task, ThreadParams>(std::forward<Handler>(handler), std::forward<ThreadParams>(params)));
 }
 
 template <typename Task, template<typename> class Queue>
@@ -169,15 +177,12 @@ template <typename Task, template<typename> class Queue>
 inline size_t ThreadPoolImpl<Task, Queue>::getWorkerId()
 {
     size_t id;
-    {
-        bool found = freeWorkers.findFreeWorker(id);
-        if (found) {
-            m_next_worker.store(id+1, std::memory_order_relaxed);
-        } else {
-            id = m_next_worker.fetch_add(1, std::memory_order_relaxed);
-        }
+    bool found = freeWorkers.findFreeWorker(id);
+    if (found) {
+        m_next_worker.store(id+1, std::memory_order_relaxed);
+    } else {
+        id = m_next_worker.fetch_add(1, std::memory_order_relaxed);
     }
-    spdlog::debug("ThreadPoolImpl::getWorkerId. id = {}, m_workers.size(): {}", id, m_workers.size());
 
     return id;
 }
