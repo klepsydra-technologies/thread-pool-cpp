@@ -10,6 +10,8 @@
 #include <thread_pool/thread_params.hpp>
 #include <thread_pool/free_workers_map.h>
 
+#include <spdlog/spdlog.h>
+
 namespace tp
 {
 /**
@@ -29,6 +31,12 @@ public:
     explicit Worker(size_t queue_size, FreeWorkersMap & freeWorkers);
 
     /**
+     * @brief Worker Constructor.
+     * @param queue shared pointer to the queue.
+     */
+    explicit Worker(std::shared_ptr<Queue<std::pair<Task, ThreadParams>> > queue, FreeWorkersMap & freeWorkers);
+
+    /**
      * @brief Move ctor implementation.
      */
     Worker(Worker&& rhs) noexcept;
@@ -41,9 +49,8 @@ public:
     /**
      * @brief start Create the executing thread and start tasks execution.
      * @param id Worker ID.
-     * @param steal_donor Sibling worker to steal task from it.
      */
-    void start(size_t id, Worker* steal_donor);
+    void start(size_t id);
 
     /**
      * @brief stop Stop all worker's thread and stealing activity.
@@ -60,13 +67,6 @@ public:
     bool post(Handler&& handler, ThreadParams&& params);
 
     /**
-     * @brief steal Steal one task from this worker queue.
-     * @param task Place for stealed task to be stored.
-     * @return true on success.
-     */
-    bool steal(std::pair<Task, ThreadParams>& taskPair);
-
-    /**
      * @brief getWorkerIdForCurrentThread Return worker ID associated with
      * current thread if exists.
      * @return Worker ID.
@@ -77,11 +77,10 @@ private:
     /**
      * @brief threadFunc Executing thread function.
      * @param id Worker ID to be associated with this thread.
-     * @param steal_donor Sibling worker to steal task from it.
      */
-    void threadFunc(size_t id, Worker* steal_donor);
+    void threadFunc(size_t id);
 
-    Queue<std::pair<Task, ThreadParams> > m_queue;
+    std::shared_ptr<Queue<std::pair<Task, ThreadParams>> > m_queue;
     std::atomic<bool> m_running_flag;
     FreeWorkersMap & m_freeWorkers;
     std::thread m_thread;
@@ -101,7 +100,15 @@ namespace detail
 
 template <typename Task, template<typename> class Queue>
 inline Worker<Task, Queue>::Worker(size_t queue_size, FreeWorkersMap & freeWorkers)
-    : m_queue(queue_size)
+    : m_queue(std::make_shared<Queue<std::pair<Task, ThreadParams>>>(queue_size))
+    , m_running_flag(true)
+    , m_freeWorkers(freeWorkers)
+{
+}
+
+template <typename Task, template<typename> class Queue>
+inline Worker<Task, Queue>::Worker(std::shared_ptr<Queue<std::pair<Task, ThreadParams>> > queue, FreeWorkersMap & freeWorkers)
+    : m_queue(queue)
     , m_running_flag(true)
     , m_freeWorkers(freeWorkers)
 {
@@ -118,7 +125,7 @@ inline Worker<Task, Queue>& Worker<Task, Queue>::operator=(Worker&& rhs) noexcep
 {
     if (this != &rhs)
     {
-        m_queue = std::move(rhs.m_queue);
+        m_queue = rhs.m_queue;
         m_running_flag = rhs.m_running_flag.load();
         m_thread = std::move(rhs.m_thread);
     }
@@ -133,9 +140,9 @@ inline void Worker<Task, Queue>::stop()
 }
 
 template <typename Task, template<typename> class Queue>
-inline void Worker<Task, Queue>::start(size_t id, Worker* steal_donor)
+inline void Worker<Task, Queue>::start(size_t id)
 {
-    m_thread = std::thread(&Worker<Task, Queue>::threadFunc, this, id, steal_donor);
+    m_thread = std::thread(&Worker<Task, Queue>::threadFunc, this, id);
 }
 
 template <typename Task, template<typename> class Queue>
@@ -148,17 +155,11 @@ template <typename Task, template<typename> class Queue>
 template <typename Handler>
 inline bool Worker<Task, Queue>::post(Handler&& handler, ThreadParams&& params)
 {
-    return m_queue.push(std::make_pair<Task, ThreadParams>(std::forward<Handler>(handler), std::forward<ThreadParams>(params)));
+    return m_queue->push(std::make_pair<Task, ThreadParams>(std::forward<Handler>(handler), std::forward<ThreadParams>(params)));
 }
 
 template <typename Task, template<typename> class Queue>
-inline bool Worker<Task, Queue>::steal(std::pair<Task, ThreadParams>& taskPair)
-{
-    return m_queue.pop(taskPair);
-}
-
-template <typename Task, template<typename> class Queue>
-inline void Worker<Task, Queue>::threadFunc(size_t id, Worker* steal_donor)
+inline void Worker<Task, Queue>::threadFunc(size_t id)
 {
     *detail::thread_id() = id;
 
@@ -167,7 +168,7 @@ inline void Worker<Task, Queue>::threadFunc(size_t id, Worker* steal_donor)
 
     while (m_running_flag.load(std::memory_order_relaxed))
     {
-        if (m_queue.pop(handlerPair) || ((steal_donor != nullptr) && (steal_donor->steal(handlerPair))))
+        if (m_queue->pop(handlerPair))
         {
             try
             {
@@ -198,10 +199,6 @@ inline void Worker<Task, Queue>::threadFunc(size_t id, Worker* steal_donor)
             {
                 // suppress all exceptions
             }
-        }
-        else
-        {
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
     }
 }

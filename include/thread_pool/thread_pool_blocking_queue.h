@@ -9,7 +9,7 @@ class BlockingQueue {
 
 public:
     //TODO: enable timeout via configuration
-    BlockingQueue(size_t size, std::uint64_t timeout = 100000)
+    BlockingQueue(size_t size, std::uint64_t timeout = 10)
         : _decorableQueue(size)
         , _timeout(timeout)
     {}

@@ -27,6 +27,8 @@
 #include <cstdint>
 #include <condition_variable>
 
+#include <spdlog/spdlog.h>
+
 namespace tp {
 
 template <class T, class Container = std::list<T>>
@@ -72,14 +74,14 @@ public:
      * @param sq
      */
     SafeQueue (const SafeQueue& sq) {
-        std::lock_guard<std::mutex> lock (sq.m_mutex);
+        std::unique_lock<std::mutex> lock (sq.m_mutex);
         m_queue = sq.m_queue;
     }
 
 
     ~SafeQueue()
     {
-        std::lock_guard<std::mutex> lock (m_mutex);
+        std::unique_lock<std::mutex> lock (m_mutex);
     }
 
     /**
@@ -153,7 +155,7 @@ public:
      */
     bool try_push (const value_type& item)
     {
-        std::lock_guard<std::mutex> lock (m_mutex);
+        std::unique_lock<std::mutex> lock (m_mutex);
 
         if ((m_max_num_items > 0 && m_queue.size() >= m_max_num_items)) {
             return false;
@@ -171,7 +173,7 @@ public:
      */
     bool try_push (const value_type&& item)
     {
-        std::lock_guard<std::mutex> lock (m_mutex);
+        std::unique_lock<std::mutex> lock (m_mutex);
 
         if ((m_max_num_items > 0 && m_queue.size() >= m_max_num_items)) {
             return false;
@@ -189,7 +191,7 @@ public:
      */
     bool try_move_push (value_type& item)
     {
-        std::lock_guard<std::mutex> lock (m_mutex);
+        std::unique_lock<std::mutex> lock (m_mutex);
 
         if ((m_max_num_items > 0 && m_queue.size() >= m_max_num_items)) {
             return false;
@@ -207,7 +209,7 @@ public:
      */
     uint force_move_push (const value_type& item)
     {
-        std::lock_guard<std::mutex> lock (m_mutex);
+        std::unique_lock<std::mutex> lock (m_mutex);
 
         uint discardedItems = 0;
         while ((m_max_num_items > 0 && m_queue.size() >= m_max_num_items)) {
@@ -292,9 +294,9 @@ public:
     }
 
     /**
-     * @brief timeout_pop Pops item from the queue. If the queue is empty, blocks for timeout microseconds, or until item becomes available.
+     * @brief timeout_pop Pops item from the queue. If the queue is empty, blocks for timeout milliseconds, or until item becomes available.
      * @param item An item.
-     * @param timeout The number of microseconds to wait.
+     * @param timeout The number of milliseconds to wait.
      * @return  true if get an item from the queue, false if no item is received before the timeout.
      */
     bool timeout_pop (value_type& item, std::uint64_t timeout)
@@ -306,7 +308,7 @@ public:
             if (timeout == 0)
                 return false;
 
-            if (m_non_empty_condition.wait_for (lock, std::chrono::microseconds (timeout)) == std::cv_status::timeout)
+            if (m_non_empty_condition.wait_for (lock, std::chrono::milliseconds (timeout)) == std::cv_status::timeout)
                 return false;
         }
 
@@ -318,10 +320,10 @@ public:
 
     /**
      * @brief timeout_move_pop Pops item from the queue using the contained type's move assignment operator, if it has one..
-     * If the queue is empty, blocks for timeout microseconds, or until item becomes available.
+     * If the queue is empty, blocks for timeout milliseconds, or until item becomes available.
      * This method is identical to the try_pop() method if that type has no move assignment operator.
      * @param item An item.
-     * @param timeout The number of microseconds to wait.
+     * @param timeout The number of milliseconds to wait.
      * @return
      * \return true if get an item from the queue, false if no item is received before the timeout.
      */
@@ -334,8 +336,19 @@ public:
             if (timeout == 0)
                 return false;
 
-            if (m_non_empty_condition.wait_for (lock, std::chrono::microseconds (timeout)) == std::cv_status::timeout)
+            bool ok = m_non_empty_condition.wait_for (lock, std::chrono::milliseconds (timeout), [this] {
+                if (m_queue.empty()) {
+                    return false;
+                }
+                return true;
+            });
+            if (!ok) {
                 return false;
+            }
+            if (m_queue.empty()) {
+                spdlog::debug("safequeue::timeout_move_pop. spurious wake up. Retuning false");
+                return false;
+            }
         }
 
         item = std::move (m_queue.front());
@@ -350,7 +363,7 @@ public:
      */
     size_type size() const
     {
-        std::lock_guard<std::mutex> lock (m_mutex);
+        std::unique_lock<std::mutex> lock (m_mutex);
         return m_queue.size();
     }
 
@@ -360,7 +373,7 @@ public:
      */
     bool empty() const
     {
-        std::lock_guard<std::mutex> lock (m_mutex);
+        std::unique_lock<std::mutex> lock (m_mutex);
         return m_queue.empty();
     }
 
@@ -370,7 +383,7 @@ public:
      */
     bool full() const
     {
-        std::lock_guard<std::mutex> lock (m_mutex);
+        std::unique_lock<std::mutex> lock (m_mutex);
         return (m_max_num_items > 0 && m_queue.size() >= m_max_num_items);
     }
 
@@ -382,8 +395,8 @@ public:
     {
         if (this != &sq)
         {
-            std::lock_guard<std::mutex> lock1 (m_mutex);
-            std::lock_guard<std::mutex> lock2 (sq.m_mutex);
+            std::unique_lock<std::mutex> lock1 (m_mutex);
+            std::unique_lock<std::mutex> lock2 (sq.m_mutex);
             m_queue.swap (sq.m_queue);
 
             if (!m_queue.empty())
@@ -403,8 +416,8 @@ public:
     {
         if (this != &sq)
         {
-            std::lock_guard<std::mutex> lock1 (m_mutex);
-            std::lock_guard<std::mutex> lock2 (sq.m_mutex);
+            std::unique_lock<std::mutex> lock1 (m_mutex);
+            std::unique_lock<std::mutex> lock2 (sq.m_mutex);
             std::queue<T, Container> temp {sq.m_queue};
             m_queue.swap (temp);
 
@@ -422,7 +435,7 @@ public:
      */
     SafeQueue& operator= (SafeQueue && sq)
     {
-        std::lock_guard<std::mutex> lock (m_mutex);
+        std::unique_lock<std::mutex> lock (m_mutex);
         m_queue = std::move (sq.m_queue);
 
         if (!m_queue.empty())  m_non_empty_condition.notify_all();

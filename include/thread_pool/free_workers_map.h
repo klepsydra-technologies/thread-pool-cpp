@@ -4,8 +4,6 @@
 #include <map>
 #include <mutex>
 
-#include <spdlog/spdlog.h>
-
 namespace tp {
 class FreeWorkersMap
 {
@@ -14,7 +12,6 @@ public:
 
     void setFree(size_t id, bool isFree) {
         std::lock_guard<std::mutex> guard(_workerLock);
-        spdlog::debug("Setting worker with id : {}, to status free = {}", id, isFree);
         _freeWorkersMap[id] = isFree;
     }
 
