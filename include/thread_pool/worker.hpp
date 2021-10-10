@@ -172,6 +172,7 @@ inline void Worker<Task, Queue>::threadFunc(size_t id)
         {
             try
             {
+                spdlog::debug("{}. Executing new job with name {}.", __PRETTY_FUNCTION__, handlerPair.second.getName());
                 m_freeWorkers.setFree(id, false);
 #if defined(__unix__) || defined(__rtems__)
                 auto threadName = handlerPair.second.getName();
@@ -194,10 +195,13 @@ inline void Worker<Task, Queue>::threadFunc(size_t id)
 #endif
                 handlerPair.first();
                 m_freeWorkers.setFree(id, true);
+                spdlog::debug("{}. Finished job with name {}.", __PRETTY_FUNCTION__, handlerPair.second.getName());
+
             }
             catch(...)
             {
                 // suppress all exceptions
+                spdlog::warn("{}. Exception during execution of {}.", __PRETTY_FUNCTION__, handlerPair.second.getName());
             }
         }
     }
