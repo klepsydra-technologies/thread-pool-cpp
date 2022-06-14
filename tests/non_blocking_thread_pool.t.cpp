@@ -10,7 +10,11 @@
 namespace TestLinkage {
 size_t getWorkerIdForCurrentThread()
 {
+#if defined(__freertos__) || defined(KPSR_FREERTOS_EMUL)
+    return tp::detail::thread_id_get();
+#else
     return *tp::detail::thread_id();
+#endif
 }
 
 size_t getWorkerIdForCurrentThread2()
