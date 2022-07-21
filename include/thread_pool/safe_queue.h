@@ -202,6 +202,10 @@ public:
         return true;
     }
 
+#ifdef __freertos__
+    using uint = uint32_t;
+#endif
+
     /**
      * @brief force_push Move ownership and pushesthe item into the queue, remove previous items if the queue is full.
      * @param item An item.

@@ -9,6 +9,7 @@
 
 #include <thread_pool/thread_params.hpp>
 #include <thread_pool/free_workers_map.h>
+#include <thread_pool/reader_writer_lock.h>
 
 #include <spdlog/spdlog.h>
 
@@ -91,11 +92,58 @@ private:
 
 namespace detail
 {
+#if !(defined(__freertos__) || defined(KPSR_FREERTOS_EMUL))
     inline size_t* thread_id()
     {
         static thread_local size_t tss_id = -1u;
         return &tss_id;
     }
+#else
+    enum
+    {
+        thread_id_RD,
+        thread_id_WR
+    };
+
+    inline void thread_id_op(size_t *id, int op)
+    {
+        static std::map<std::thread::id, size_t> thread_id_map;
+        static ReaderWriterLock l;
+
+        if (op == thread_id_RD)
+        {
+            l.lock_shared();
+            auto it = thread_id_map.find(std::this_thread::get_id());
+            if (it != thread_id_map.end())
+                *id = it->second;
+            else
+                throw std::logic_error("thread_id_get(): id for this thread does not exist");
+            l.unlock_shared();
+        }
+        else if (op == thread_id_WR)
+        {
+            l.lock();
+            std::thread::id th_id = std::this_thread::get_id();
+            if (thread_id_map.find(th_id) == thread_id_map.end())
+                thread_id_map.insert(std::make_pair(th_id, *id));
+            else
+                thread_id_map[th_id] = *id;
+            l.unlock();
+        }
+    }
+
+    inline size_t thread_id_get()
+    {
+        size_t id;
+        thread_id_op(&id, thread_id_RD);
+        return id;
+    }
+
+    inline void thread_id_set(size_t& id)
+    {
+        thread_id_op(&id, thread_id_WR);
+    }
+#endif
 }
 
 template <typename Task, template<typename> class Queue>
@@ -148,7 +196,11 @@ inline void Worker<Task, Queue>::start(size_t id)
 template <typename Task, template<typename> class Queue>
 inline size_t Worker<Task, Queue>::getWorkerIdForCurrentThread()
 {
+#if !(defined(__freertos__) || defined(KPSR_FREERTOS_EMUL))
     return *detail::thread_id();
+#else
+    return detail::thread_id_get();
+#endif
 }
 
 template <typename Task, template<typename> class Queue>
@@ -161,7 +213,11 @@ inline bool Worker<Task, Queue>::post(Handler&& handler, ThreadParams&& params)
 template <typename Task, template<typename> class Queue>
 inline void Worker<Task, Queue>::threadFunc(size_t id)
 {
+#if !(defined(__freertos__) || defined(KPSR_FREERTOS_EMUL))
     *detail::thread_id() = id;
+#else
+    detail::thread_id_set(id);
+#endif
 
     // Task handler & name pair
     std::pair<Task, ThreadParams> handlerPair;
