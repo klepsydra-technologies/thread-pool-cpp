@@ -1,3 +1,15 @@
+### Klepsydra UT coverage
+
+```bash
+mkdir build && cd build/
+cmake ..
+make coverage-html
+```
+
+Then go to the gcovr [report](build/coverage-html/index.html).
+
+---
+
 thread-pool-cpp
 =================
 [![Build Status](https://travis-ci.org/inkooboo/thread-pool-cpp.svg?branch=master)](https://travis-ci.org/inkooboo/thread-pool-cpp)
@@ -7,7 +19,7 @@ thread-pool-cpp
  * It is highly scalable and fast.
  * It is header only.
  * No external dependencies, only standard library needed.
- * It implements both work-stealing and work-distribution balancing startegies.
+ * It implements both work-stealing and work-distribution balancing strategies.
  * It implements cooperative scheduling strategy.
 
 Example run:
